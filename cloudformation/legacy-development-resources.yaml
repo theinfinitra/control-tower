@@ -1,0 +1,429 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Legacy Development Resources for Control Tower Integration Training'
+
+Parameters:
+  TeamNumber:
+    Type: String
+    Default: '1'
+    Description: 'Team number (1 or 2)'
+  
+  Environment:
+    Type: String
+    Default: 'dev'
+    Description: 'Environment type'
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-0c02fb55956c7d316  # Amazon Linux 2
+    us-west-2:
+      AMI: ami-0c2d3e23f757b5d84  # Amazon Linux 2
+
+Resources:
+  # Development VPC with CIDR matching Day 2 specifications
+  DevVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub '172.${TeamNumber}7.0.0/16'  # Team1: 172.17.0.0/16, Team2: 172.27.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-${Environment}-vpc-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+
+  # Development subnet
+  DevSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref DevVPC
+      CidrBlock: !Sub '172.${TeamNumber}7.1.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-subnet-team${TeamNumber}'
+
+  # Internet Gateway for dev environment
+  DevInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-igw-team${TeamNumber}'
+
+  DevAttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref DevVPC
+      InternetGatewayId: !Ref DevInternetGateway
+
+  # Route Table for development subnet
+  DevRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref DevVPC
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-rt-team${TeamNumber}'
+
+  DevRoute:
+    Type: AWS::EC2::Route
+    DependsOn: DevAttachGateway
+    Properties:
+      RouteTableId: !Ref DevRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref DevInternetGateway
+
+  DevSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DevSubnet
+      RouteTableId: !Ref DevRouteTable
+
+  # Development security group with some violations
+  DevSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Legacy development security group'
+      VpcId: !Ref DevVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '10.0.0.0/8'  # Broad internal access
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: '0.0.0.0/0'  # Dev server from anywhere
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: '0.0.0.0/0'  # Node.js dev server
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-sg-team${TeamNumber}'
+
+  # Legacy development IAM users with access keys (violation) - 3 users total
+  LegacyDevUser1:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub 'legacy-dev-user-1-team${TeamNumber}'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+
+  LegacyDevUser2:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub 'legacy-dev-user-2-team${TeamNumber}'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+
+  LegacyDevUser3:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub 'legacy-dev-user-3-team${TeamNumber}'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+
+  LegacyDevAccessKey1:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref LegacyDevUser1
+      Status: Active
+
+  LegacyDevAccessKey2:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref LegacyDevUser2
+      Status: Active
+
+  LegacyDevAccessKey3:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref LegacyDevUser3
+      Status: Active
+
+  # Development EC2 instances (multiple for testing)
+  DevInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      InstanceType: t3.micro
+      SubnetId: !Ref DevSubnet
+      SecurityGroupIds:
+        - !Ref DevSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            Encrypted: false  # Unencrypted - violation
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y nodejs npm git
+          
+          # Create Node.js development application
+          mkdir -p /opt/devapp
+          cd /opt/devapp
+          
+          cat > package.json << 'EOF'
+          {
+            "name": "legacy-dev-app",
+            "version": "1.0.0",
+            "description": "Legacy development application",
+            "main": "server.js",
+            "scripts": {
+              "start": "node server.js"
+            },
+            "dependencies": {
+              "express": "^4.18.0"
+            }
+          }
+          EOF
+          
+          cat > server.js << 'JSEOF'
+          const express = require('express');
+          const app = express();
+          const port = 3000;
+          
+          app.get('/', (req, res) => {
+            res.send('<h1>Legacy Dev App - Team ${TeamNumber}</h1><p>Environment: Development</p><p>Status: Running on Node.js</p><p>Instance: 1</p>');
+          });
+          
+          app.get('/health', (req, res) => {
+            res.json({
+              status: 'healthy',
+              environment: 'development',
+              team: '${TeamNumber}',
+              timestamp: new Date().toISOString()
+            });
+          });
+          
+          app.listen(port, () => {
+            console.log('Dev app listening at http://localhost:' + port);
+          });
+          JSEOF
+          
+          npm install
+          npm start &
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-server-1-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DevInstance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      InstanceType: t3.micro
+      SubnetId: !Ref DevSubnet
+      SecurityGroupIds:
+        - !Ref DevSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            Encrypted: false  # Unencrypted - violation
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-server-2-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Development S3 buckets with various configurations
+  DevCodeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'legacy-dev-code-team${TeamNumber}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-code-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DevTestDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'legacy-dev-testdata-team${TeamNumber}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false  # Allows public ACLs - potential issue
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-testdata-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Conflicting AWS Config (will conflict with Control Tower)
+  ConfigDeliveryChannel:
+    Type: AWS::Config::DeliveryChannel
+    Properties:
+      Name: !Sub 'legacy-config-delivery-team${TeamNumber}'
+      S3BucketName: !Ref ConfigBucket
+
+  ConfigurationRecorder:
+    Type: AWS::Config::ConfigurationRecorder
+    Properties:
+      Name: 'legacy-dev-config'  # Exact name expected by Day 2 labs
+      RoleARN: !GetAtt ConfigRole.Arn
+      RecordingGroup:
+        AllSupported: true
+        IncludeGlobalResourceTypes: true
+
+  ConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'legacy-config-bucket-team${TeamNumber}-${AWS::AccountId}'
+
+  ConfigRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LegacyConfigRole-Team${TeamNumber}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: config.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWS_ConfigRole
+
+  # Development Lambda functions
+  DevLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LegacyDevLambdaRole-Team${TeamNumber}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+  DevTestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'legacy-dev-test-function-team${TeamNumber}'
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt DevLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          def lambda_handler(event, context):
+              # Development test function
+              s3 = boto3.client('s3')
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Development test function')
+              }
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          TEAM: !Sub 'Team${TeamNumber}'
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-test-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # DynamoDB tables for development testing (2 unencrypted tables)
+  DevTestTable1:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'legacy-dev-test-table-1-team${TeamNumber}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: false  # Unencrypted - violation
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-table-1-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DevTestTable2:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'legacy-dev-test-table-2-team${TeamNumber}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: false  # Unencrypted - violation
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-dev-table-2-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Legacy SNS topic for notifications
+  DevNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'legacy-dev-notifications-team${TeamNumber}'
+      DisplayName: !Sub 'Legacy Dev Notifications Team ${TeamNumber}'
+      KmsMasterKeyId: alias/aws/sns  # Using AWS managed key
+
+Outputs:
+  DevVPCId:
+    Description: 'Development VPC ID'
+    Value: !Ref DevVPC
+    Export:
+      Name: !Sub 'legacy-dev-vpc-team${TeamNumber}'
+
+  DevUserAccessKeys:
+    Description: 'Development user access keys (violations)'
+    Value: !Sub |
+      User1: ${LegacyDevAccessKey1} / ${LegacyDevAccessKey1.SecretAccessKey}
+      User2: ${LegacyDevAccessKey2} / ${LegacyDevAccessKey2.SecretAccessKey}
+      User3: ${LegacyDevAccessKey3} / ${LegacyDevAccessKey3.SecretAccessKey}
+
+  ConflictingResources:
+    Description: 'Resources that will conflict with Control Tower'
+    Value: !Sub |
+      AWS Config Recorder: ${ConfigurationRecorder}
+      Config Delivery Channel: ${ConfigDeliveryChannel}
+      IAM Users with Access Keys: ${LegacyDevUser1}, ${LegacyDevUser2}, ${LegacyDevUser3}
+      Unencrypted DynamoDB: ${DevTestTable1}, ${DevTestTable2}
+      Unencrypted EC2 Instances: ${DevInstance1}, ${DevInstance2}
+      Public S3 Bucket: ${DevTestDataBucket}

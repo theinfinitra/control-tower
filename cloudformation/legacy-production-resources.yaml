@@ -1,0 +1,468 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Legacy Production Resources for Control Tower Integration Training'
+
+Parameters:
+  TeamNumber:
+    Type: String
+    Default: '1'
+    Description: 'Team number (1 or 2)'
+  
+  Environment:
+    Type: String
+    Default: 'prod'
+    Description: 'Environment type'
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-0c02fb55956c7d316  # Amazon Linux 2
+    us-west-2:
+      AMI: ami-0c2d3e23f757b5d84  # Amazon Linux 2
+
+Conditions:
+  IsTeam1: !Equals [!Ref TeamNumber, '1']
+
+Resources:
+  # Legacy VPC with CIDR matching Day 2 specifications
+  LegacyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub '172.${TeamNumber}6.0.0/16'  # Team1: 172.16.0.0/16, Team2: 172.26.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-${Environment}-vpc-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+
+  # Public subnet
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LegacyVPC
+      CidrBlock: !Sub '172.${TeamNumber}6.1.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-public-subnet-team${TeamNumber}'
+
+  # Private subnet for RDS
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LegacyVPC
+      CidrBlock: !Sub '172.${TeamNumber}6.2.0/24'
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-private-subnet-team${TeamNumber}'
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-igw-team${TeamNumber}'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref LegacyVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LegacyVPC
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-public-rt-team${TeamNumber}'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # Overpermissive Security Group (violates guardrails)
+  OverpermissiveSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Legacy overpermissive security group'
+      VpcId: !Ref LegacyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'  # SSH from anywhere - violation
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-overpermissive-sg-team${TeamNumber}'
+
+  # Legacy IAM Role with overpermissive policies (Role 1 of 5)
+  LegacyEC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LegacyEC2Role-Team${TeamNumber}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess  # Overpermissive
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+
+  # Additional overpermissive roles (Roles 2-5 of 5)
+  LegacyAppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LegacyAppRole-Team${TeamNumber}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+
+  LegacyDataRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LegacyDataRole-Team${TeamNumber}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+
+  LegacyNetworkRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LegacyNetworkRole-Team${TeamNumber}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+
+  LegacySecurityRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LegacySecurityRole-Team${TeamNumber}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/PowerUserAccess
+
+  LegacyInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub 'LegacyInstanceProfile-Team${TeamNumber}'
+      Roles:
+        - !Ref LegacyEC2Role
+
+  # Production web server with sample application (Instance 1 of 3)
+  LegacyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      InstanceType: t3.micro
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref OverpermissiveSecurityGroup
+      IamInstanceProfile: !Ref LegacyInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            Encrypted: false  # Unencrypted - violation
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd mysql
+          systemctl start httpd
+          systemctl enable httpd
+          
+          # Create sample web application
+          cat > /var/www/html/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head><title>Legacy Production App - Team ${TeamNumber}</title></head>
+          <body>
+            <h1>Legacy Production Server - Team ${TeamNumber}</h1>
+            <p>Status: <span id="status">Loading...</span></p>
+            <p>Database: <span id="db">Checking...</span></p>
+            <script>
+              fetch('/health').then(r => r.json()).then(d => {
+                document.getElementById('status').textContent = d.status;
+                document.getElementById('db').textContent = d.database;
+              });
+            </script>
+          </body>
+          </html>
+          EOF
+          
+          # Create health check endpoint
+          cat > /var/www/html/health << 'EOF'
+          #!/bin/bash
+          echo "Content-Type: application/json"
+          echo ""
+          echo '{"status":"running","database":"connected","timestamp":"'$(date)'"}'
+          EOF
+          chmod +x /var/www/html/health
+          
+          # Configure CGI
+          echo "LoadModule cgi_module modules/mod_cgi.so" >> /etc/httpd/conf/httpd.conf
+          echo "ScriptAlias /health /var/www/html/health" >> /etc/httpd/conf/httpd.conf
+          systemctl restart httpd
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-prod-server-1-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Additional production instances (Instances 2-3 of 3)
+  LegacyEC2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      InstanceType: t3.micro
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref OverpermissiveSecurityGroup
+      IamInstanceProfile: !Ref LegacyInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            Encrypted: false  # Unencrypted - violation
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-prod-server-2-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  LegacyEC2Instance3:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]
+      InstanceType: t3.micro
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref OverpermissiveSecurityGroup
+      IamInstanceProfile: !Ref LegacyInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            Encrypted: false  # Unencrypted - violation
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-prod-server-3-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # RDS instance with public access (violates guardrails)
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: 'Legacy DB subnet group'
+      SubnetIds:
+        - !Ref PublicSubnet
+        - !Ref PrivateSubnet
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-db-subnet-group-team${TeamNumber}'
+
+  LegacyDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub 'legacy-db-team${TeamNumber}'
+      DBInstanceClass: db.t3.micro
+      Engine: !If [IsTeam1, 'mysql', 'postgres']
+      EngineVersion: !If [IsTeam1, '8.0.35', '15.3']
+      MasterUsername: admin
+      MasterUserPassword: 'TempPassword123!'
+      AllocatedStorage: 20
+      StorageType: gp2
+      StorageEncrypted: false  # Unencrypted - violation
+      PubliclyAccessible: true  # Public access - violation
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      BackupRetentionPeriod: 0  # No backups - poor practice
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-database-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Legacy database security group'
+      VpcId: !Ref LegacyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: '0.0.0.0/0'  # MySQL from anywhere - violation
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-db-sg-team${TeamNumber}'
+
+  # S3 bucket with public access (violates guardrails)
+  LegacyS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'legacy-data-bucket-team${TeamNumber}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-data-bucket-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Conflicting CloudTrail with exact name expected by Day 2
+  ConflictingCloudTrail:
+    Type: AWS::CloudTrail::Trail
+    Properties:
+      TrailName: 'legacy-prod-trail'  # Exact name expected by Day 2 labs
+      S3BucketName: !Ref CloudTrailBucket
+      IncludeGlobalServiceEvents: true
+      IsMultiRegionTrail: true
+      EnableLogFileValidation: false
+      Tags:
+        - Key: Name
+          Value: 'legacy-prod-trail'
+        - Key: Environment
+          Value: !Ref Environment
+
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'legacy-cloudtrail-bucket-team${TeamNumber}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # Legacy Lambda function
+  LegacyLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LegacyLambdaRole-Team${TeamNumber}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess  # Overpermissive
+
+  LegacyLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'legacy-data-processor-team${TeamNumber}'
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LegacyLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          def lambda_handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'message': 'Legacy data processor running',
+                      'processed_items': 42,
+                      'status': 'healthy'
+                  })
+              }
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-lambda-team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  VPCId:
+    Description: 'Legacy VPC ID'
+    Value: !Ref LegacyVPC
+    Export:
+      Name: !Sub 'legacy-vpc-team${TeamNumber}'
+
+  WebServerURL:
+    Description: 'Production web server URL'
+    Value: !Sub 'http://${LegacyEC2Instance.PublicIp}'
+
+  ConflictingResources:
+    Description: 'Resources that will conflict with Control Tower'
+    Value: !Sub |
+      CloudTrail: legacy-prod-trail
+      Unencrypted RDS: ${LegacyDatabase}
+      Public RDS: ${LegacyDatabase}
+      Overpermissive SG: ${OverpermissiveSecurityGroup}
+      Unencrypted EC2: ${LegacyEC2Instance}, ${LegacyEC2Instance2}, ${LegacyEC2Instance3}
+      Public S3: ${LegacyS3Bucket}
+      Overpermissive IAM Roles: ${LegacyEC2Role}, ${LegacyAppRole}, ${LegacyDataRole}, ${LegacyNetworkRole}, ${LegacySecurityRole}
