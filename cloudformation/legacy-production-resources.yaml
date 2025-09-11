@@ -37,6 +37,10 @@ Resources:
           Value: !Ref Environment
         - Key: Team
           Value: !Sub 'Team${TeamNumber}'
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   # Public subnet
   PublicSubnet:
@@ -266,6 +270,12 @@ Resources:
           Value: !Sub 'legacy-prod-server-1-team${TeamNumber}'
         - Key: Environment
           Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   # Additional production instances (Instances 2-3 of 3)
   LegacyEC2Instance2:
@@ -288,6 +298,12 @@ Resources:
           Value: !Sub 'legacy-prod-server-2-team${TeamNumber}'
         - Key: Environment
           Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   LegacyEC2Instance3:
     Type: AWS::EC2::Instance
@@ -309,6 +325,12 @@ Resources:
           Value: !Sub 'legacy-prod-server-3-team${TeamNumber}'
         - Key: Environment
           Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   # RDS instance with public access (violates guardrails)
   DBSubnetGroup:
@@ -344,6 +366,12 @@ Resources:
           Value: !Sub 'legacy-database-team${TeamNumber}'
         - Key: Environment
           Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -352,9 +380,9 @@ Resources:
       VpcId: !Ref LegacyVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 3306
-          ToPort: 3306
-          CidrIp: '0.0.0.0/0'  # MySQL from anywhere - violation
+          FromPort: !If [IsTeam1, 3306, 5432]
+          ToPort: !If [IsTeam1, 3306, 5432]
+          CidrIp: '0.0.0.0/0'  # Database from anywhere - violation
       Tags:
         - Key: Name
           Value: !Sub 'legacy-db-sg-team${TeamNumber}'
@@ -378,7 +406,14 @@ Resources:
           Value: !Sub 'legacy-data-bucket-team${TeamNumber}'
         - Key: Environment
           Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
+  
   # Conflicting CloudTrail with exact name expected by Day 2
   ConflictingCloudTrail:
     Type: AWS::CloudTrail::Trail
@@ -404,6 +439,29 @@ Resources:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
 
+  CloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudTrailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AWSCloudTrailAclCheck
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt CloudTrailBucket.Arn
+          - Sid: AWSCloudTrailWrite
+            Effect: Allow
+            Principal:
+              Service: cloudtrail.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "${CloudTrailBucket}/*"
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+  
   # Legacy Lambda function
   LegacyLambdaRole:
     Type: AWS::IAM::Role
@@ -445,6 +503,12 @@ Resources:
           Value: !Sub 'legacy-lambda-team${TeamNumber}'
         - Key: Environment
           Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
 Outputs:
   VPCId:
