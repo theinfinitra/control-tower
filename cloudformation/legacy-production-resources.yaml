@@ -438,15 +438,15 @@ Resources:
       DBInstanceIdentifier: !Sub 'legacy-db-team${TeamNumber}'
       DBInstanceClass: db.t3.micro
       Engine: !If [IsTeam1, 'mysql', 'postgres']
-      EngineVersion: !If [IsTeam1, '8.0.35', '15.3']
-      MasterUsername: admin
+      EngineVersion: !If [IsTeam1, '8.0.35', '15']
+      MasterUsername: ctteam
       MasterUserPassword: 'TempPassword123!'
       AllocatedStorage: 20
       StorageType: gp2
       StorageEncrypted: false  # Unencrypted - violation
       PubliclyAccessible: true  # Public access - violation
       DBSubnetGroupName: !Ref DBSubnetGroup
-      VpcSecurityGroups:
+      VPCSecurityGroups:
         - !Ref DatabaseSecurityGroup
       BackupRetentionPeriod: 0  # No backups - poor practice
       Tags:
