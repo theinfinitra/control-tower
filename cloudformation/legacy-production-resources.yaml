@@ -388,6 +388,7 @@ Resources:
       IncludeGlobalServiceEvents: true
       IsMultiRegionTrail: true
       EnableLogFileValidation: false
+      IsLogging: true
       Tags:
         - Key: Name
           Value: 'legacy-prod-trail'
