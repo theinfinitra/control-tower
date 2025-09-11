@@ -53,6 +53,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'legacy-public-subnet-team${TeamNumber}'
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   # Private subnet for RDS
   PrivateSubnet:
@@ -64,6 +72,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'legacy-private-subnet-team${TeamNumber}'
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   # Internet Gateway
   InternetGateway:
@@ -72,6 +88,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'legacy-igw-team${TeamNumber}'
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -87,6 +111,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'legacy-public-rt-team${TeamNumber}'
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   PublicRoute:
     Type: AWS::EC2::Route
@@ -124,6 +156,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'legacy-overpermissive-sg-team${TeamNumber}'
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   # Legacy IAM Role with overpermissive policies (Role 1 of 5)
   LegacyEC2Role:
@@ -144,6 +184,10 @@ Resources:
           Value: !Ref Environment
         - Key: Team
           Value: !Sub 'Team${TeamNumber}'
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   # Additional overpermissive roles (Roles 2-5 of 5)
   LegacyAppRole:
@@ -159,6 +203,15 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/PowerUserAccess
+      Tags:
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   LegacyDataRole:
     Type: AWS::IAM::Role
@@ -173,6 +226,15 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/PowerUserAccess
+      Tags:
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   LegacyNetworkRole:
     Type: AWS::IAM::Role
@@ -187,6 +249,15 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/PowerUserAccess
+      Tags:
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   LegacySecurityRole:
     Type: AWS::IAM::Role
@@ -201,6 +272,15 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/PowerUserAccess
+      Tags:
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   LegacyInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -343,6 +423,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'legacy-db-subnet-group-team${TeamNumber}'
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   LegacyDatabase:
     Type: AWS::RDS::DBInstance
@@ -386,6 +474,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub 'legacy-db-sg-team${TeamNumber}'
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   # S3 bucket with public access (violates guardrails)
   LegacyS3Bucket:
@@ -417,6 +513,7 @@ Resources:
   # Conflicting CloudTrail with exact name expected by Day 2
   ConflictingCloudTrail:
     Type: AWS::CloudTrail::Trail
+    DependsOn: CloudTrailBucketPolicy
     Properties:
       TrailName: 'legacy-prod-trail'  # Exact name expected by Day 2 labs
       S3BucketName: !Ref CloudTrailBucket
@@ -429,6 +526,12 @@ Resources:
           Value: 'legacy-prod-trail'
         - Key: Environment
           Value: !Ref Environment
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   CloudTrailBucket:
     Type: AWS::S3::Bucket
@@ -438,6 +541,17 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub 'legacy-cloudtrail-bucket-team${TeamNumber}'
+        - Key: Team
+          Value: !Sub 'Team${TeamNumber}'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: 'TechCorp-ControlTower'
+        - Key: Owner
+          Value: 'TeamLead'
 
   CloudTrailBucketPolicy:
     Type: AWS::S3::BucketPolicy
